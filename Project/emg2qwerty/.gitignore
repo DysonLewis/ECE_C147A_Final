@@ -43,7 +43,8 @@ dmypy.json
 .hypothesis
 
 # Logs and checkpoints
-logs/
+# logs/ why were the logs not save L gitignore tbh
+
 lightning_logs/
 
 # Data

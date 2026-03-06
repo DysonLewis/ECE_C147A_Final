@@ -190,6 +190,72 @@ class LogSpectrogram:
 
 
 @dataclass
+class FourierFeatures:
+    """Creates a magnitude spectrogram from an EMG signal using STFT,
+    without log scaling. Useful as an alternative to LogSpectrogram
+    to compare the effect of log compression on model performance.
+
+    Input must be of shape (T, ...) and the returned tensor is of shape
+    (T, ..., freq) where freq = n_fft // 2 + 1.
+
+    The output shape and windowing parameters match LogSpectrogram exactly,
+    so the two transforms are drop-in replacements for each other.
+
+    Args:
+        n_fft (int): Size of FFT, creates n_fft // 2 + 1 frequency bins.
+            (default: 64)
+        hop_length (int): Stride between consecutive STFT windows.
+            (default: 16)
+    """
+
+    n_fft: int = 64
+    hop_length: int = 16
+
+    def __post_init__(self) -> None:
+        self.spectrogram = torchaudio.transforms.Spectrogram(
+            n_fft=self.n_fft,
+            hop_length=self.hop_length,
+            normalized=True,
+            center=False,
+        )
+
+    def __call__(self, tensor: torch.Tensor) -> torch.Tensor:
+        x = tensor.movedim(0, -1)          # (T, ..., C) -> (..., C, T)
+        spec = self.spectrogram(x)          # (..., C, freq, T)
+        mag = torch.sqrt(spec + 1e-12)      # magnitude (not power, no log)
+        return mag.movedim(-1, 0)           # (T, ..., C, freq)
+
+
+@dataclass
+class Resample:
+    """Downsamples an EMG signal by keeping every ``factor``-th sample
+    along the time dimension. Applied before spectrogram transforms.
+
+    Nyquist requirement: the original signal is sampled at 2000 Hz with
+    relevant sEMG content up to ~500 Hz. To satisfy Nyquist (fs >= 2 * fmax),
+    the minimum safe sampling rate is 1000 Hz, i.e. factor <= 2.
+    Higher factors (4, 8) intentionally violate Nyquist and are used to
+    study the relationship between sampling rate and CER.
+
+    Input must be of shape (T, ...).
+
+    Args:
+        factor (int): Downsampling factor. Output length = T // factor.
+            factor=1 is a no-op. (default: 1)
+    """
+
+    factor: int = 1
+
+    def __post_init__(self) -> None:
+        assert self.factor >= 1
+
+    def __call__(self, tensor: torch.Tensor) -> torch.Tensor:
+        if self.factor == 1:
+            return tensor
+        return tensor[:: self.factor]
+
+
+@dataclass
 class SpecAugment:
     """Applies time and frequency masking as per the paper
     "SpecAugment: A Simple Data Augmentation Method for Automatic Speech

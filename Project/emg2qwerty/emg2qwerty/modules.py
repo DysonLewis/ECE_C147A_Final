@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from collections.abc import Sequence
+from unicodedata import bidirectional
 
 import torch
 from torch import nn
@@ -278,3 +279,74 @@ class TDSConvEncoder(nn.Module):
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         return self.tds_conv_blocks(inputs)  # (T, N, num_features)
+    
+
+class CNNEncoder(nn.Module):
+
+    def __init__(
+            self, 
+            in_features: int,
+            cnn_channels: int = 64,
+            cnn_kernel_size: int = 3,
+            cnn_num_layers: int = 2,
+            dropout: float = 0.1
+        ) -> None:
+
+        super().__init__()
+
+        layers: list[nn.Module] = []
+        current_channels = in_features
+        for _ in range(cnn_num_layers):
+            layers.extend(
+                [
+                    nn.Conv1d(current_channels, cnn_channels, kernel_size = cnn_kernel_size, padding = cnn_kernel_size // 2),
+                    nn.BatchNorm1d(cnn_channels),
+                    nn.ReLU(),
+                    nn.Dropout(dropout),
+                ]
+            )
+            
+            current_channels = cnn_channels
+            
+        self.cnn = nn.Sequential(*layers)
+        self.out_features = cnn_channels
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+
+        T,N,F = inputs.shape
+        x = inputs.permute(1,2,0) 
+        x = self.cnn(x)
+        x = x.permute(2,0,1)
+    
+        return x 
+    
+class RNNEncoder(nn.Module):
+    
+    def __init__(
+            self, 
+            in_features: int,
+            hidden_size: int = 128,
+            num_layers: int = 2,
+            dropout: float = 0.1
+        ) -> None:
+
+        super().__init__()
+
+        self.rnn = nn.LSTM(
+            input_size = in_features,
+            hidden_size = hidden_size,
+            num_layers = num_layers,
+            batch_first = False,
+            bidirectional = True,
+            dropout = dropout if num_layers > 1 else 0.0,
+            nonlinearity = "tanh",
+        )
+        
+        self.out_features = hidden_size * (2 if bidirectional else 1)
+    
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+
+        outputs, _ = self.rnn(inputs)
+        return outputs
+
+

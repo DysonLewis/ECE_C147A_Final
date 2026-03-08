@@ -363,3 +363,5 @@ class RNNEncoder(nn.Module):
         outputs, _ = self.rnn(inputs)
         # outputs: (T, N, hidden_size * num_directions)
         return outputs
+    
+    

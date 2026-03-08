@@ -350,18 +350,140 @@ class RNNEncoder(nn.Module):
         super().__init__()
 
         self.rnn = nn.GRU(
-            input_size=input_size,
-            hidden_size=hidden_size,
-            num_layers=num_layers,
-            dropout=dropout if num_layers > 1 else 0.0,
-            bidirectional=bidirectional,
-            batch_first=False,  # expects (T, N, input_size)
+            input_size = input_size,
+            hidden_size = hidden_size,
+            num_layers = num_layers,
+            dropout =  dropout if num_layers > 1 else 0.0,
+            bidirectional = bidirectional,
+            batch_first = False,  
         )
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        # inputs: (T, N, input_size)
+  
         outputs, _ = self.rnn(inputs)
-        # outputs: (T, N, hidden_size * num_directions)
+       
         return outputs
     
+
+
+class GRUProcessor(nn.Module):
+
+    def __init__(
+        self,
+        input_size: int,
+        hidden_size: int,
+        num_layers: int = 2,
+        dropout: float = 0.1,
+        bidirectional: bool = True,
+    ) -> None:
+        
+        super().__init__()
+
+        self.rnn = nn.GRU(
+            input_size = input_size,
+            hidden_size = hidden_size,
+            num_layers = num_layers,
+            dropout = dropout if num_layers > 1 else 0.0,
+            bidirectional = bidirectional,
+            batch_first = False,
+        )
+
+        self.output_size = hidden_size * (2 if bidirectional else 1)
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
     
+        outputs, _ = self.rnn(inputs)
+        return outputs  
+    
+
+class LSTMProcessor(nn.Module):
+
+    def __init__(
+        self,
+        input_size: int,
+        hidden_size: int,
+        num_layers: int = 2,
+        dropout: float = 0.1,
+        bidirectional: bool = True,
+    ) -> None:
+        super().__init__()
+        self.rnn = nn.LSTM(
+            input_size = input_size,
+            hidden_size = hidden_size,
+            num_layers = num_layers,
+            dropout = dropout if num_layers > 1 else 0.0,
+            bidirectional = bidirectional,
+            batch_first = False,
+        )
+        
+        self.output_size = hidden_size * (2 if bidirectional else 1)
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+     
+        outputs, _ = self.rnn(inputs)
+        return outputs  
+    
+class TransformerProcessor(nn.Module):
+
+    def __init__(
+        self,
+        input_size: int,
+        num_heads: int = 8,
+        num_layers: int = 2,
+        dim_feedforward: int = 1024,
+        dropout: float = 0.1,
+        max_len: int = 10000,
+    ) -> None:
+        super().__init__()
+
+        assert input_size % num_heads == 0, (
+            f"input_size ({input_size}) must be divisible by num_heads ({num_heads})"
+        )
+
+        self.output_size = input_size
+
+        
+        self.pos_dropout = nn.Dropout(dropout)
+        position = torch.arange(max_len).unsqueeze(1)  
+        div_term = torch.exp(
+            torch.arange(0, input_size, 2) * (-torch.log(torch.tensor(10000.0)) / input_size)
+        )
+
+        pe = torch.zeros(max_len, 1, input_size)
+        pe[:, 0, 0::2] = torch.sin(position * div_term)
+        pe[:, 0, 1::2] = torch.cos(position * div_term)
+        self.register_buffer("pe", pe)
+
+       
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model = input_size,
+            nhead = num_heads,
+            dim_feedforward = dim_feedforward,
+            dropout = dropout,
+            batch_first = False,  
+        )
+        self.transformer = nn.TransformerEncoder(
+            encoder_layer = encoder_layer,
+            num_layers = num_layers,
+        )
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        
+        T = inputs.shape[0]
+        x = inputs + self.pe[:T]
+        x = self.pos_dropout(x)
+        return self.transformer(x)  
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -278,3 +278,48 @@ class TDSConvEncoder(nn.Module):
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         return self.tds_conv_blocks(inputs)  # (T, N, num_features)
+
+
+class CNNEncoder(nn.Module):
+    """A 1D convolutional encoder for sequence modeling.
+
+    Takes input of shape (T, N, input_size) and returns output of shape
+    (T, N, cnn_channels).
+
+    Args:
+        input_size (int): Number of input features.
+        cnn_channels (int): Number of channels in each conv layer.
+        cnn_kernel_size (int): Kernel size of the temporal convolutions.
+        num_layers (int): Number of convolutional layers. (default: 4)
+        dropout (float): Dropout probability between layers. (default: 0.1)
+    """
+
+    def __init__(
+        self,
+        input_size: int,
+        cnn_channels: int,
+        cnn_kernel_size: int,
+        num_layers: int = 4,
+        dropout: float = 0.1,
+    ) -> None:
+        super().__init__()
+
+        assert cnn_kernel_size % 2 == 1, "cnn_kernel_size must be odd for same padding"
+        padding = cnn_kernel_size // 2
+
+        layers: list[nn.Module] = []
+        in_channels = input_size
+        for _ in range(num_layers):
+            layers.extend([
+                nn.Conv1d(in_channels, cnn_channels, cnn_kernel_size, padding=padding),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+            ])
+            in_channels = cnn_channels
+        self.cnn = nn.Sequential(*layers)
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        # inputs: (T, N, input_size)
+        x = inputs.permute(1, 2, 0)  # (N, C, T)
+        x = self.cnn(x)              # (N, cnn_channels, T)
+        return x.permute(2, 0, 1)    # (T, N, cnn_channels)

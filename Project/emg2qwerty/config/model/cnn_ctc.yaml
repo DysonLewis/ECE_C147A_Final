@@ -1,3 +1,4 @@
+# @package _global_
 module:
   _target_: emg2qwerty.lightning.CNNCTCModule
   in_features: 528          

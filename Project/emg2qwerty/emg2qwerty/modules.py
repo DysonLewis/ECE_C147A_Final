@@ -323,3 +323,43 @@ class CNNEncoder(nn.Module):
         x = inputs.permute(1, 2, 0)  # (N, C, T)
         x = self.cnn(x)              # (N, cnn_channels, T)
         return x.permute(2, 0, 1)    # (T, N, cnn_channels)
+    
+
+class RNNEncoder(nn.Module):
+    """A recurrent encoder using a multi-layer GRU for sequence modeling.
+
+    Takes input of shape (T, N, input_size) and returns output of shape
+    (T, N, hidden_size * num_directions).
+
+    Args:
+        input_size (int): Number of input features.
+        hidden_size (int): Number of features in the hidden state.
+        num_layers (int): Number of recurrent layers. (default: 2)
+        dropout (float): Dropout probability between RNN layers. (default: 0.1)
+        bidirectional (bool): If True, use a bidirectional GRU. (default: True)
+    """
+
+    def __init__(
+        self,
+        input_size: int,
+        hidden_size: int,
+        num_layers: int = 2,
+        dropout: float = 0.1,
+        bidirectional: bool = True,
+    ) -> None:
+        super().__init__()
+
+        self.rnn = nn.GRU(
+            input_size=input_size,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            dropout=dropout if num_layers > 1 else 0.0,
+            bidirectional=bidirectional,
+            batch_first=False,  # expects (T, N, input_size)
+        )
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        # inputs: (T, N, input_size)
+        outputs, _ = self.rnn(inputs)
+        # outputs: (T, N, hidden_size * num_directions)
+        return outputs

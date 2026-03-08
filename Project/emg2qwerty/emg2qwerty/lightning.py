@@ -28,8 +28,9 @@ from emg2qwerty.modules import (
     RNNEncoder,
     CNNEncoder,
     GRUProcessor,
-    LSTMPocessor,
+    LSTMProcessor,
     TransformerProcessor,
+
 )
 from emg2qwerty.transforms import Transform
 

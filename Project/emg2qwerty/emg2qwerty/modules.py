@@ -406,7 +406,9 @@ class LSTMProcessor(nn.Module):
         dropout: float = 0.1,
         bidirectional: bool = True,
     ) -> None:
+        
         super().__init__()
+        
         self.rnn = nn.LSTM(
             input_size = input_size,
             hidden_size = hidden_size,

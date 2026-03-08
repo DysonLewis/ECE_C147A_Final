@@ -53,9 +53,3 @@ callbacks:
     mode: ${monitor_mode}
     save_last: true
     verbose: true
-
-
-
-
-
-

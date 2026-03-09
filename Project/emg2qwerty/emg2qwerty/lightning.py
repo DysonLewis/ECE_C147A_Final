@@ -554,7 +554,11 @@ class CNNCTCModule(pl.LightningModule):
         )
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        return self.model(inputs)
+        x = self.spec_norm(inputs)
+        x = self.mlp(x)
+        x = x.flatten(start_dim=2)
+        x = self.cnn_encoder(x)
+        return self.log_softmax(self.linear(x))
 
     def _step(self, phase: str, batch: dict[str, torch.Tensor], *args, **kwargs) -> torch.Tensor:
         inputs = batch["inputs"]

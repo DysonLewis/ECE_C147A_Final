@@ -8,7 +8,7 @@ module:
   num_rnn_layers: 2
   transformer_num_heads: 8
   transformer_num_layers: 2
-  transformer_dim_feedforward: 1024
+  transformer_dim_feedforward: 256
   dropout: 0.1
   bidirectional: true
 
@@ -47,6 +47,8 @@ trainer:
   devices: 1
   num_nodes: 1
   max_epochs: 150
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: norm
   default_root_dir: ${hydra:runtime.output_dir}
 
 callbacks:

@@ -4,7 +4,7 @@ module:
   in_features: 528         
   mlp_features:
     - 384
-  rnn_hidden_size: 256      
+  rnn_hidden_size: 384      
   num_rnn_layers: 2         
   dropout: 0.1
   bidirectional: true     
@@ -44,6 +44,8 @@ trainer:
   devices: 1
   num_nodes: 1
   max_epochs: 150
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: norm
   default_root_dir: ${hydra:runtime.output_dir}
 
 callbacks:

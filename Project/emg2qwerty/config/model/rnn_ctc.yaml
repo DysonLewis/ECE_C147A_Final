@@ -1,20 +1,26 @@
 # @package _global_
+# rnn_ctc: Vanilla bidirectional RNN encoder only → CTC
+#
+# No CNN feature extractor — the MLP frontend feeds directly into a 2-layer
+# bidirectional vanilla RNN. Acts as the baseline recurrent architecture.
+# Weaker long-range memory than GRU/LSTM but far fewer parameters.
+#
+# Frontend: None
+# Backend:  RNNEncoder (2-layer bidirectional, hidden=384 → output=768)
 module:
   _target_: emg2qwerty.lightning.RNNCTCModule
-  in_features: 528         
+  in_features: 528
   mlp_features:
     - 384
-  rnn_hidden_size: 384      
-  num_rnn_layers: 2         
+  rnn_hidden_size: 384
+  num_rnn_layers: 2
   dropout: 0.1
-  bidirectional: true     
+  bidirectional: true
 
 datamodule:
   _target_: emg2qwerty.lightning.WindowedEMGDataModule
   window_length: 8000
-  padding:
-    - 1800
-    - 200
+  padding: [1800, 200]
 
 optimizer:
   _target_: torch.optim.Adam
@@ -45,6 +51,8 @@ trainer:
   num_nodes: 1
   max_epochs: 150
   default_root_dir: ${hydra:runtime.output_dir}
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: norm
 
 callbacks:
   - _target_: pytorch_lightning.callbacks.LearningRateMonitor

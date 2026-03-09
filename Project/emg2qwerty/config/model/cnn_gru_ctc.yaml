@@ -1,23 +1,35 @@
 # @package _global_
+# cnn_gru_ctc: Custom 1-D CNN frontend + bidirectional GRU backend → CTC
+#
+# Hybrid architecture: CNN blocks extract local temporal features, then a
+# bidirectional GRU captures longer-range dependencies. Primary architecture
+# from the project plan.
+#
+# Frontend: CNNEncoder — local feature extraction (matches cnn_ctc)
+# Backend:  GRUEncoder — longer-range temporal modelling
 module:
-  _target_: emg2qwerty.lightning.CNNGRUModule
+  _target_: emg2qwerty.lightning.FlexibleCTCModule
   in_features: 528
-  mlp_features:
-    - 384
-  cnn_channels: 128
-  cnn_kernel_size: 31
-  num_cnn_layers: 4
-  gru_hidden_size: 128
-  num_gru_layers: 2
-  dropout: 0.1
-  bidirectional: true
+  mlp_features: [384]
+  frontend:
+    _target_: emg2qwerty.modules.CNNEncoder
+    num_features: 768   # NUM_BANDS * mlp_features[-1] = 2 * 384
+    cnn_channels: 128
+    cnn_kernel_size: 31
+    num_cnn_layers: 4
+    dropout: 0.1
+  backend:
+    _target_: emg2qwerty.modules.GRUEncoder
+    input_size: 768
+    hidden_size: 384    # bidirectional: 384 * 2 = 768
+    num_layers: 2
+    dropout: 0.1
+    bidirectional: true
 
 datamodule:
   _target_: emg2qwerty.lightning.WindowedEMGDataModule
   window_length: 8000
-  padding:
-    - 1800
-    - 200
+  padding: [1800, 200]
 
 optimizer:
   _target_: torch.optim.Adam
@@ -48,6 +60,8 @@ trainer:
   num_nodes: 1
   max_epochs: 150
   default_root_dir: ${hydra:runtime.output_dir}
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: norm
 
 callbacks:
   - _target_: pytorch_lightning.callbacks.LearningRateMonitor

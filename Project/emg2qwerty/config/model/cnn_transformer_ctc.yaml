@@ -1,23 +1,35 @@
 # @package _global_
+# cnn_transformer_ctc: Custom 1-D CNN frontend + Transformer backend → CTC
+#
+# The Transformer backend attends globally over all time steps in the window.
+# Pre-LN (norm_first=True) is used for stable early training — critical since
+# CTC loss starts near ~170 before the model learns any structure.
+#
+# Frontend: CNNEncoder        — local feature extraction (matches cnn_ctc)
+# Backend:  TransformerEncoder — global temporal attention
 module:
-  _target_: emg2qwerty.lightning.CNNTransformerModule
+  _target_: emg2qwerty.lightning.FlexibleCTCModule
   in_features: 528
-  mlp_features:
-    - 384
-  cnn_channels: 128
-  cnn_kernel_size: 31
-  num_cnn_layers: 4
-  transformer_num_heads: 8
-  transformer_num_layers: 2
-  transformer_dim_feedforward: 512
-  dropout: 0.1
+  mlp_features: [384]
+  frontend:
+    _target_: emg2qwerty.modules.CNNEncoder
+    num_features: 768
+    cnn_channels: 128
+    cnn_kernel_size: 31
+    num_cnn_layers: 4
+    dropout: 0.1
+  backend:
+    _target_: emg2qwerty.modules.TransformerEncoder
+    d_model: 768        # must equal num_features
+    nhead: 8            # head_dim = 768 / 8 = 96
+    num_layers: 2       # increase to 4 for better performance if compute allows
+    dim_feedforward: 1536  # 2 × d_model
+    dropout: 0.1
 
 datamodule:
   _target_: emg2qwerty.lightning.WindowedEMGDataModule
   window_length: 8000
-  padding:
-    - 1800
-    - 200
+  padding: [1800, 200]
 
 optimizer:
   _target_: torch.optim.Adam
@@ -48,6 +60,8 @@ trainer:
   num_nodes: 1
   max_epochs: 150
   default_root_dir: ${hydra:runtime.output_dir}
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: norm
 
 callbacks:
   - _target_: pytorch_lightning.callbacks.LearningRateMonitor

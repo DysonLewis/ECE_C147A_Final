@@ -1,7 +1,0 @@
-# @package _global_
-decoder:
-  _target_: emg2qwerty.decoder.CTCBeamDecoder
-  
-  lm_weight: 0.5       
-  word_score: 1.0      
-  beam_size: 50        

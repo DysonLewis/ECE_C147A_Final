@@ -1,13 +1,15 @@
 # @package _global_
 # cnn_lstm_ctc: Custom 1-D CNN frontend + bidirectional LSTM backend → CTC
 #
-# Same structure as cnn_gru_ctc but replaces GRU with LSTM. LSTM's explicit
-# memory cell (c_t) gives stronger capacity for long-range dependencies at the
-# cost of ~33% more parameters. Compare against cnn_gru_ctc to see whether
-# the added capacity is worth the extra compute on this dataset.
+# Same structure as cnn_gru_ctc but with LSTM. LSTM's explicit memory cell
+# (c_t) gives stronger long-range capacity at ~33% more parameters per gate
+# vs GRU. Compare against cnn_gru_ctc to evaluate if c_t is worth the cost.
 #
-# Frontend: CNNEncoder  — local feature extraction (matches cnn_ctc)
-# Backend:  LSTMEncoder — longer-range temporal modelling
+# Parameter budget (target ~5.3M):
+#   SpectrogramNorm + MLP + head   :  0.482M
+#   CNNEncoder (C=96, K=31, L=4)   :  1.292M
+#   LSTMEncoder (h=232, L=2, bidir):  3.514M
+#   Total                          :  ~5.289M
 module:
   _target_: emg2qwerty.lightning.FlexibleCTCModule
   in_features: 528
@@ -15,14 +17,14 @@ module:
   frontend:
     _target_: emg2qwerty.modules.CNNEncoder
     num_features: 768
-    cnn_channels: 128
+    cnn_channels: 96
     cnn_kernel_size: 31
     num_cnn_layers: 4
     dropout: 0.1
   backend:
     _target_: emg2qwerty.modules.LSTMEncoder
     input_size: 768
-    hidden_size: 384
+    hidden_size: 232    # bidir: 232*2=464 → proj to 768
     num_layers: 2
     dropout: 0.1
     bidirectional: true
@@ -61,6 +63,11 @@ trainer:
   num_nodes: 1
   max_epochs: 150
   default_root_dir: ${hydra:runtime.output_dir}
+  # BUG FIX: gradient clipping was missing entirely.
+  # Without it, RNN/GRU/LSTM models explode in the first few batches
+  # (loss ~170 -> collapses to ~3.5 = log(num_classes), i.e. uniform output).
+  # Clipping by L2 norm at 1.0 is the standard fix for recurrent networks
+  # and also prevents occasional gradient spikes in the CNN-only baseline.
   gradient_clip_val: 1.0
   gradient_clip_algorithm: norm
 

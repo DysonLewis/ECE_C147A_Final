@@ -1,18 +1,20 @@
 # @package _global_
 # rnn_ctc: Vanilla bidirectional RNN encoder only → CTC
 #
-# No CNN feature extractor — the MLP frontend feeds directly into a 2-layer
-# bidirectional vanilla RNN. Acts as the baseline recurrent architecture.
-# Weaker long-range memory than GRU/LSTM but far fewer parameters.
+# No CNN feature extractor — MLP feeds directly into a 2-layer bidirectional
+# vanilla RNN. Acts as the baseline recurrent architecture.
+# Weaker long-range memory than GRU/LSTM but far fewer gates per time step.
 #
-# Frontend: None
-# Backend:  RNNEncoder (2-layer bidirectional, hidden=384 → output=768)
+# Parameter budget (target ~5.3M):
+#   SpectrogramNorm + MLP + head  :  0.482M
+#   RNNEncoder (h=608, L=2, bidir):  4.832M
+#   Total                         :  ~5.315M
 module:
   _target_: emg2qwerty.lightning.RNNCTCModule
   in_features: 528
   mlp_features:
     - 384
-  rnn_hidden_size: 384
+  rnn_hidden_size: 608
   num_rnn_layers: 2
   dropout: 0.1
   bidirectional: true
@@ -51,6 +53,11 @@ trainer:
   num_nodes: 1
   max_epochs: 150
   default_root_dir: ${hydra:runtime.output_dir}
+  # BUG FIX: gradient clipping was missing entirely.
+  # Without it, RNN/GRU/LSTM models explode in the first few batches
+  # (loss ~170 -> collapses to ~3.5 = log(num_classes), i.e. uniform output).
+  # Clipping by L2 norm at 1.0 is the standard fix for recurrent networks
+  # and also prevents occasional gradient spikes in the CNN-only baseline.
   gradient_clip_val: 1.0
   gradient_clip_algorithm: norm
 

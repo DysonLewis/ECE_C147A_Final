@@ -1,27 +1,30 @@
 # @package _global_
 # cnn_gru_ctc: Custom 1-D CNN frontend + bidirectional GRU backend → CTC
 #
-# Hybrid architecture: CNN blocks extract local temporal features, then a
-# bidirectional GRU captures longer-range dependencies. Primary architecture
-# from the project plan.
+# Hybrid: CNN blocks extract local temporal features (~1s receptive field),
+# then bidirectional GRU captures longer-range dependencies. Primary
+# architecture from the project plan.
 #
-# Frontend: CNNEncoder — local feature extraction (matches cnn_ctc)
-# Backend:  GRUEncoder — longer-range temporal modelling
+# Parameter budget (target ~5.3M):
+#   SpectrogramNorm + MLP + head  :  0.482M
+#   CNNEncoder (C=96, K=31, L=4)  :  1.292M  ← local feature extractor
+#   GRUEncoder (h=272, L=2, bidir):  3.456M  ← sequential temporal model
+#   Total                         :  ~5.230M
 module:
   _target_: emg2qwerty.lightning.FlexibleCTCModule
   in_features: 528
   mlp_features: [384]
   frontend:
     _target_: emg2qwerty.modules.CNNEncoder
-    num_features: 768   # NUM_BANDS * mlp_features[-1] = 2 * 384
-    cnn_channels: 128
+    num_features: 768
+    cnn_channels: 96
     cnn_kernel_size: 31
     num_cnn_layers: 4
     dropout: 0.1
   backend:
     _target_: emg2qwerty.modules.GRUEncoder
     input_size: 768
-    hidden_size: 384    # bidirectional: 384 * 2 = 768
+    hidden_size: 272    # bidir: 272*2=544 → proj to 768
     num_layers: 2
     dropout: 0.1
     bidirectional: true
@@ -60,6 +63,11 @@ trainer:
   num_nodes: 1
   max_epochs: 150
   default_root_dir: ${hydra:runtime.output_dir}
+  # BUG FIX: gradient clipping was missing entirely.
+  # Without it, RNN/GRU/LSTM models explode in the first few batches
+  # (loss ~170 -> collapses to ~3.5 = log(num_classes), i.e. uniform output).
+  # Clipping by L2 norm at 1.0 is the standard fix for recurrent networks
+  # and also prevents occasional gradient spikes in the CNN-only baseline.
   gradient_clip_val: 1.0
   gradient_clip_algorithm: norm
 

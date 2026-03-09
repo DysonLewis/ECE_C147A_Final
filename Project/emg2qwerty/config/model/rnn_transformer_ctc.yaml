@@ -1,12 +1,17 @@
 # @package _global_
 # rnn_transformer_ctc: Shallow RNN frontend + Transformer backend → CTC
 #
-# Tests whether a Transformer can match recurrent counterparts when the CNN
-# is replaced by a lightweight recurrent feature extractor. The RNN frontend
+# Tests whether a Transformer can match recurrent counterparts when paired
+# with a lightweight recurrent frontend instead of CNN. The RNN frontend
 # provides temporal locality bias before the global Transformer attention.
+# dim_feedforward=1024 (vs 768 in cnn_transformer_ctc) to compensate for the
+# smaller RNN frontend and keep total params near ~5.3M.
 #
-# Frontend: RNNEncoder        (1 layer, bidirectional)
-# Backend:  TransformerEncoder (2 layers, Pre-LN for stable training)
+# Parameter budget (target ~5.3M):
+#   SpectrogramNorm + MLP + head              :  0.482M
+#   RNNEncoder (h=256, L=1, bidir)            :  0.921M
+#   TransformerEncoder (d=768, ff=1024, L=1)  :  3.940M
+#   Total                                     :  ~5.343M
 module:
   _target_: emg2qwerty.lightning.FlexibleCTCModule
   in_features: 528
@@ -14,7 +19,7 @@ module:
   frontend:
     _target_: emg2qwerty.modules.RNNEncoder
     input_size: 768
-    hidden_size: 384
+    hidden_size: 256
     num_layers: 1
     dropout: 0.0        # no inter-layer dropout for a single-layer RNN
     bidirectional: true
@@ -22,8 +27,8 @@ module:
     _target_: emg2qwerty.modules.TransformerEncoder
     d_model: 768
     nhead: 8
-    num_layers: 2
-    dim_feedforward: 1536
+    num_layers: 1
+    dim_feedforward: 1024  # slightly larger than cnn_transformer to match budget
     dropout: 0.1
 
 datamodule:
@@ -60,6 +65,11 @@ trainer:
   num_nodes: 1
   max_epochs: 150
   default_root_dir: ${hydra:runtime.output_dir}
+  # BUG FIX: gradient clipping was missing entirely.
+  # Without it, RNN/GRU/LSTM models explode in the first few batches
+  # (loss ~170 -> collapses to ~3.5 = log(num_classes), i.e. uniform output).
+  # Clipping by L2 norm at 1.0 is the standard fix for recurrent networks
+  # and also prevents occasional gradient spikes in the CNN-only baseline.
   gradient_clip_val: 1.0
   gradient_clip_algorithm: norm
 

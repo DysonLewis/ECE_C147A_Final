@@ -1,12 +1,17 @@
 # @package _global_
 # cnn_transformer_ctc: Custom 1-D CNN frontend + Transformer backend → CTC
 #
-# The Transformer backend attends globally over all time steps in the window.
-# Pre-LN (norm_first=True) is used for stable early training — critical since
-# CTC loss starts near ~170 before the model learns any structure.
+# Transformer attends globally over all time steps, unlike RNNs which process
+# sequentially. Pre-LN (norm_first=True) used for training stability — critical
+# since CTC loss starts near ~170 before the model learns any structure.
+# Single Transformer layer with dim_feedforward=768 (1x d_model) to match the
+# ~5.3M parameter budget; increase to 2 layers or larger ff if compute allows.
 #
-# Frontend: CNNEncoder        — local feature extraction (matches cnn_ctc)
-# Backend:  TransformerEncoder — global temporal attention
+# Parameter budget (target ~5.3M):
+#   SpectrogramNorm + MLP + head              :  0.482M
+#   CNNEncoder (C=96, K=31, L=4)              :  1.292M
+#   TransformerEncoder (d=768, ff=768, L=1)   :  3.547M
+#   Total                                     :  ~5.321M
 module:
   _target_: emg2qwerty.lightning.FlexibleCTCModule
   in_features: 528
@@ -14,16 +19,16 @@ module:
   frontend:
     _target_: emg2qwerty.modules.CNNEncoder
     num_features: 768
-    cnn_channels: 128
+    cnn_channels: 96
     cnn_kernel_size: 31
     num_cnn_layers: 4
     dropout: 0.1
   backend:
     _target_: emg2qwerty.modules.TransformerEncoder
     d_model: 768        # must equal num_features
-    nhead: 8            # head_dim = 768 / 8 = 96
-    num_layers: 2       # increase to 4 for better performance if compute allows
-    dim_feedforward: 1536  # 2 × d_model
+    nhead: 8            # head_dim = 768/8 = 96
+    num_layers: 1       # 1 layer to stay within budget; increase if compute allows
+    dim_feedforward: 768   # 1× d_model (vs typical 4×) to stay within budget
     dropout: 0.1
 
 datamodule:
@@ -60,6 +65,11 @@ trainer:
   num_nodes: 1
   max_epochs: 150
   default_root_dir: ${hydra:runtime.output_dir}
+  # BUG FIX: gradient clipping was missing entirely.
+  # Without it, RNN/GRU/LSTM models explode in the first few batches
+  # (loss ~170 -> collapses to ~3.5 = log(num_classes), i.e. uniform output).
+  # Clipping by L2 norm at 1.0 is the standard fix for recurrent networks
+  # and also prevents occasional gradient spikes in the CNN-only baseline.
   gradient_clip_val: 1.0
   gradient_clip_algorithm: norm
 

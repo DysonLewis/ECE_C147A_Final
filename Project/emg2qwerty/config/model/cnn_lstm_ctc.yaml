@@ -1,0 +1,74 @@
+# @package _global_
+# cnn_lstm_ctc: Custom 1-D CNN frontend + bidirectional LSTM backend → CTC
+#
+# Same structure as cnn_gru_ctc but replaces GRU with LSTM. LSTM's explicit
+# memory cell (c_t) gives stronger capacity for long-range dependencies at the
+# cost of ~33% more parameters. Compare against cnn_gru_ctc to see whether
+# the added capacity is worth the extra compute on this dataset.
+#
+# Frontend: CNNEncoder  — local feature extraction (matches cnn_ctc)
+# Backend:  LSTMEncoder — longer-range temporal modelling
+module:
+  _target_: emg2qwerty.lightning.FlexibleCTCModule
+  in_features: 528
+  mlp_features: [384]
+  frontend:
+    _target_: emg2qwerty.modules.CNNEncoder
+    num_features: 768
+    cnn_channels: 128
+    cnn_kernel_size: 31
+    num_cnn_layers: 4
+    dropout: 0.1
+  backend:
+    _target_: emg2qwerty.modules.LSTMEncoder
+    input_size: 768
+    hidden_size: 384
+    num_layers: 2
+    dropout: 0.1
+    bidirectional: true
+
+datamodule:
+  _target_: emg2qwerty.lightning.WindowedEMGDataModule
+  window_length: 8000
+  padding: [1800, 200]
+
+optimizer:
+  _target_: torch.optim.Adam
+  lr: 0.001
+
+lr_scheduler:
+  scheduler:
+    _target_: pl_bolts.optimizers.lr_scheduler.LinearWarmupCosineAnnealingLR
+    warmup_epochs: 10
+    max_epochs: ${trainer.max_epochs}
+    warmup_start_lr: 1.0e-08
+    eta_min: 1.0e-06
+  interval: epoch
+
+decoder:
+  _target_: emg2qwerty.decoder.CTCGreedyDecoder
+
+seed: 1501
+batch_size: 32
+num_workers: 4
+train: true
+monitor_metric: val/CER
+monitor_mode: min
+
+trainer:
+  accelerator: gpu
+  devices: 1
+  num_nodes: 1
+  max_epochs: 150
+  default_root_dir: ${hydra:runtime.output_dir}
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: norm
+
+callbacks:
+  - _target_: pytorch_lightning.callbacks.LearningRateMonitor
+  - _target_: pytorch_lightning.callbacks.ModelCheckpoint
+    dirpath: ${hydra:runtime.output_dir}/checkpoints
+    monitor: ${monitor_metric}
+    mode: ${monitor_mode}
+    save_last: true
+    verbose: true

@@ -1,0 +1,64 @@
+# @package _global_
+# cnn_ctc: Custom 1-D CNN encoder only → CTC
+#
+# Uses CNNCTCModule with a stack of 1-D temporal conv blocks (CNNEncoder).
+# Provides local temporal feature extraction with residual connections.
+# T is fully preserved (padding = kernel_size // 2), so T_diff = 0.
+#
+# Frontend: CNNEncoder (4 layers, 128 channels, kernel=31)
+# Backend:  None
+module:
+  _target_: emg2qwerty.lightning.CNNCTCModule
+  in_features: 528
+  mlp_features:
+    - 384
+  cnn_channels: 128
+  cnn_kernel_size: 31
+  num_cnn_layers: 4
+  dropout: 0.1
+
+datamodule:
+  _target_: emg2qwerty.lightning.WindowedEMGDataModule
+  window_length: 8000
+  padding: [1800, 200]
+
+optimizer:
+  _target_: torch.optim.Adam
+  lr: 0.001
+
+lr_scheduler:
+  scheduler:
+    _target_: pl_bolts.optimizers.lr_scheduler.LinearWarmupCosineAnnealingLR
+    warmup_epochs: 10
+    max_epochs: ${trainer.max_epochs}
+    warmup_start_lr: 1.0e-08
+    eta_min: 1.0e-06
+  interval: epoch
+
+decoder:
+  _target_: emg2qwerty.decoder.CTCGreedyDecoder
+
+seed: 1501
+batch_size: 32
+num_workers: 4
+train: true
+monitor_metric: val/CER
+monitor_mode: min
+
+trainer:
+  accelerator: gpu
+  devices: 1
+  num_nodes: 1
+  max_epochs: 150
+  default_root_dir: ${hydra:runtime.output_dir}
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: norm
+
+callbacks:
+  - _target_: pytorch_lightning.callbacks.LearningRateMonitor
+  - _target_: pytorch_lightning.callbacks.ModelCheckpoint
+    dirpath: ${hydra:runtime.output_dir}/checkpoints
+    monitor: ${monitor_metric}
+    mode: ${monitor_mode}
+    save_last: true
+    verbose: true

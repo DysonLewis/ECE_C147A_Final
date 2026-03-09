@@ -523,24 +523,24 @@ class CNNCTCModule(pl.LightningModule):
 
         num_features = self.NUM_BANDS * mlp_features[-1]
 
-        self.model = nn.Sequential(
-            SpectrogramNorm(channels=self.NUM_BANDS * self.ELECTRODE_CHANNELS),
-            MultiBandRotationInvariantMLP(
-                in_features=in_features,
-                mlp_features=mlp_features,
-                num_bands=self.NUM_BANDS,
-            ),
-            nn.Flatten(start_dim=2),
-            CNNEncoder(
-                num_features=num_features,
-                cnn_channels=cnn_channels,
-                cnn_kernel_size=cnn_kernel_size,
-                num_cnn_layers=num_cnn_layers,
-                dropout=dropout,
-            ),
-            nn.Linear(num_features, charset().num_classes),
-            nn.LogSoftmax(dim=-1),
+        # Named attributes so state_dict keys match checkpoints saved from this layout.
+        # nn.Sequential would produce keys like "model.0.*", "model.3.*" which
+        # won't match a checkpoint saved with these names.
+        self.spec_norm = SpectrogramNorm(channels=self.NUM_BANDS * self.ELECTRODE_CHANNELS)
+        self.mlp = MultiBandRotationInvariantMLP(
+            in_features=in_features,
+            mlp_features=mlp_features,
+            num_bands=self.NUM_BANDS,
         )
+        self.cnn_encoder = CNNEncoder(
+            num_features=num_features,
+            cnn_channels=cnn_channels,
+            cnn_kernel_size=cnn_kernel_size,
+            num_cnn_layers=num_cnn_layers,
+            dropout=dropout,
+        )
+        self.linear = nn.Linear(num_features, charset().num_classes)
+        self.log_softmax = nn.LogSoftmax(dim=-1)
 
         self.ctc_loss = nn.CTCLoss(blank=charset().null_class)
         self.decoder = instantiate(decoder)

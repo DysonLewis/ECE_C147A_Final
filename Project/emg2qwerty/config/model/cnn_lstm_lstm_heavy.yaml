@@ -1,0 +1,82 @@
+# @package _global_
+# cnn_lstm_lstm_heavy: LSTM-heavy variant of cnn_lstm_ctc
+#
+# Shifts the parameter budget toward the LSTM backend. A minimal CNN frontend
+# does light local feature extraction; the LSTM gets most of the capacity.
+# Tests whether long-range sequential modeling (word context, multi-keystroke
+# finger patterns) is the primary driver of CER rather than local EMG features.
+#
+# Parameter budget (target ~5.3M):
+#   SpectrogramNorm + MLP + head   :  0.482M
+#   CNNEncoder (C=64,  K=31, L=3)  :  0.481M
+#   LSTMEncoder (h=256, L=2, bidir):  4.069M
+#   Total                          :  ~5.032M
+module:
+  _target_: emg2qwerty.lightning.FlexibleCTCModule
+  in_features: 528
+  mlp_features: [384]
+  frontend:
+    _target_: emg2qwerty.modules.CNNEncoder
+    num_features: 768
+    cnn_channels: 64
+    cnn_kernel_size: 31
+    num_cnn_layers: 3
+    dropout: 0.1
+  backend:
+    _target_: emg2qwerty.modules.LSTMEncoder
+    input_size: 768
+    hidden_size: 256    # bidir: 256*2=512 → proj to 768
+    num_layers: 2
+    dropout: 0.1
+    bidirectional: true
+
+datamodule:
+  _target_: emg2qwerty.lightning.WindowedEMGDataModule
+  window_length: 8000
+  padding: [1800, 200]
+
+optimizer:
+  _target_: torch.optim.Adam
+  lr: 0.001
+
+lr_scheduler:
+  scheduler:
+    _target_: pl_bolts.optimizers.lr_scheduler.LinearWarmupCosineAnnealingLR
+    warmup_epochs: 10
+    max_epochs: ${trainer.max_epochs}
+    warmup_start_lr: 1.0e-08
+    eta_min: 1.0e-06
+  interval: epoch
+
+decoder:
+  _target_: emg2qwerty.decoder.CTCGreedyDecoder
+
+seed: 1501
+batch_size: 32
+num_workers: 4
+train: true
+monitor_metric: val/CER
+monitor_mode: min
+
+trainer:
+  accelerator: gpu
+  devices: 1
+  num_nodes: 1
+  max_epochs: 150
+  default_root_dir: ${hydra:runtime.output_dir}
+  # BUG FIX: gradient clipping was missing entirely.
+  # Without it, RNN/GRU/LSTM models explode in the first few batches
+  # (loss ~170 -> collapses to ~3.5 = log(num_classes), i.e. uniform output).
+  # Clipping by L2 norm at 1.0 is the standard fix for recurrent networks
+  # and also prevents occasional gradient spikes in the CNN-only baseline.
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: norm
+
+callbacks:
+  - _target_: pytorch_lightning.callbacks.LearningRateMonitor
+  - _target_: pytorch_lightning.callbacks.ModelCheckpoint
+    dirpath: ${hydra:runtime.output_dir}/checkpoints
+    monitor: ${monitor_metric}
+    mode: ${monitor_mode}
+    save_last: true
+    verbose: true

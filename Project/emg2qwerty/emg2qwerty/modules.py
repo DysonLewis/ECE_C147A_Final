@@ -485,7 +485,22 @@ class SinusoidalPositionalEncoding(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (T, N, d_model)
-        x = x + self.pe[: x.size(0)]
+        T = x.size(0)
+        if T <= self.pe.size(0):
+            # common case: sequence fits within pre-computed table
+            pe = self.pe[:T]
+        else:
+            # sequence longer than pre-computed table (e.g. full test sessions);
+            # compute encodings on the fly for the extra positions
+            d_model = self.pe.size(2)
+            position = torch.arange(T, device=x.device).unsqueeze(1)
+            div_term = torch.exp(
+                torch.arange(0, d_model, 2, device=x.device) * (-math.log(10000.0) / d_model)
+            )
+            pe = torch.zeros(T, 1, d_model, device=x.device)
+            pe[:, 0, 0::2] = torch.sin(position * div_term)
+            pe[:, 0, 1::2] = torch.cos(position * div_term)
+        x = x + pe
         return self.dropout(x)
 
 
